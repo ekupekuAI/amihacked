@@ -1,0 +1,48 @@
+{
+  "name": "amihacked",
+  "version": "0.1.0",
+  "description": "Ask your AI agent: Am I hacked? Evidence-backed investigation of a live machine or evidence files. MCP server + CLI, read-only, runs locally.",
+  "type": "module",
+  "bin": {
+    "amihacked": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "!dist/test",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "mcp",
+    "forensics",
+    "dfir",
+    "incident-response",
+    "security",
+    "ai-agents",
+    "claude-code",
+    "threat-hunting",
+    "pcap",
+    "windows"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ekupekuAI/amihacked.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}
