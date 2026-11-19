@@ -42,7 +42,6 @@ export function isUserWritablePath(path: string): boolean {
 
 const LOLBIN_PATTERNS: Array<[RegExp, string]> = [
   [/powershell(\.exe)?["']?\s.*\s-(e|ec|enc|encodedcommand)\s+[a-z0-9+/=]{20,}/i, "PowerShell running an encoded command"],
-  [/powershell(\.exe)?["']?\s.*-w(indowstyle)?\s+h(idden)?\b/i, "PowerShell with a hidden window"],
   [/\b(downloadstring|downloadfile|downloaddata)\b|\bfrombase64string\b/i, "downloads or decodes code at run time"],
   [/\b(iex|invoke-expression)\b.*\b(new-object|iwr|irm|invoke-webrequest|invoke-restmethod|net\.webclient)\b/i, "runs code fetched from the network"],
   [/\b(iwr|irm|invoke-webrequest|invoke-restmethod)\b.*\|\s*(iex|invoke-expression)\b/i, "runs code fetched from the network"],
@@ -57,6 +56,20 @@ const LOLBIN_PATTERNS: Array<[RegExp, string]> = [
 /** Why a command line looks like living-off-the-land abuse, or null. */
 export function lolbinReason(command: string): string | null {
   for (const [pattern, reason] of LOLBIN_PATTERNS) if (pattern.test(command)) return reason;
+  return null;
+}
+
+const SCRIPT_BLOCK_PATTERNS: Array<[RegExp, string]> = [
+  [/\b(iex|invoke-expression)\b[\s\S]{0,200}\b(downloadstring|downloaddata|net\.webclient|invoke-webrequest|invoke-restmethod|iwr|irm)\b/i, "runs code fetched from the network"],
+  [/\b(downloadstring|invoke-webrequest|invoke-restmethod|iwr|irm)\b[\s\S]{0,200}\|\s*(iex|invoke-expression)\b/i, "runs code fetched from the network"],
+  [/amsiutils|amsiinitfailed|amsiscanbuffer/i, "tampers with the antimalware scan interface"],
+  [/virtualalloc[\s\S]{0,600}(createthread|rtlmovememory)/i, "loads raw code into memory"],
+  [/\bfrombase64string\b[\s\S]{0,300}\b(iex|invoke-expression|reflection\.assembly\]::load)\b/i, "decodes and runs hidden code"],
+];
+
+/** Why a logged PowerShell script block looks hostile, or null. Stricter than lolbinReason: script text is noisy. */
+export function scriptBlockReason(text: string): string | null {
+  for (const [pattern, reason] of SCRIPT_BLOCK_PATTERNS) if (pattern.test(text)) return reason;
   return null;
 }
 
@@ -231,9 +244,11 @@ const SCANNER_AGENTS = /sqlmap|nikto|nmap|masscan|wpscan|dirbuster|gobuster|nucl
 
 /** Attack technique visible in one web request, or null. */
 export function webAttackReason(path: string, userAgent = ""): string | null {
-  let decoded = path;
+  // Bound the work: a log line can carry a megabyte-long path.
+  const head = path.slice(0, 4000);
+  let decoded = head;
   try {
-    decoded = decodeURIComponent(path.replace(/\+/g, " "));
+    decoded = decodeURIComponent(head.replace(/\+/g, " "));
   } catch {
     // keep the raw path when it is not valid percent-encoding
   }

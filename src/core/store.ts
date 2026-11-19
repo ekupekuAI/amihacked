@@ -75,7 +75,6 @@ export class CaseStore {
   readonly startedAt = new Date().toISOString();
   private readonly evidence = new Map<string, Evidence>();
   private readonly findingList: Finding[] = [];
-  private readonly findingKeys = new Set<string>();
   private readonly coverageList: CoverageNote[] = [];
   private seq = 0;
   private findingSeq = 0;
@@ -139,11 +138,10 @@ export class CaseStore {
 
     const key = `${input.ruleId}|${ids.join(",")}`;
     const existing = this.findingList.find((f) => `${f.ruleId}|${f.evidenceIds.join(",")}` === key);
-    if (existing && this.findingKeys.has(key)) return existing;
+    if (existing) return existing;
 
     const finding: Finding = { ...input, evidenceIds: ids, id: `F${String(++this.findingSeq).padStart(3, "0")}`, origin };
     this.findingList.push(finding);
-    this.findingKeys.add(key);
     return finding;
   }
 

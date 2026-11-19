@@ -5,10 +5,10 @@
 
 const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g;
 
-/** Strip control and direction-override characters and cap the length. */
+/** Strip control and direction-override characters, flatten to one line and cap the length. */
 export function clean(value: unknown, max = 500): string {
   if (value === null || value === undefined) return "";
-  const text = String(value).replace(CONTROL_CHARS, " ").trim();
+  const text = String(value).replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
   return text.length > max ? `${text.slice(0, max)}…[+${text.length - max} chars]` : text;
 }
 

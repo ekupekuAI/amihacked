@@ -1,4 +1,4 @@
-import { isMasquerade, isUserWritablePath, lolbinReason } from "../core/analysis.js";
+import { isMasquerade, isUserWritablePath, lolbinReason, scriptBlockReason } from "../core/analysis.js";
 import type { CaseStore, Evidence, Finding, FindingInput } from "../core/store.js";
 import { looksLikeInjection } from "../core/untrusted.js";
 
@@ -195,19 +195,18 @@ export const rules: Rule[] = [
     id: "remote-access-tool",
     describe: "A remote-control tool is running.",
     run: (store) =>
-      store.all("process").flatMap((e): FindingInput[] => {
-        if (!REMOTE_TOOLS.test(s(e, "name"))) return [];
-        return [{
+      [...groupBy(store.all("process").filter((e) => REMOTE_TOOLS.test(s(e, "name"))), (e) => s(e, "name").toLowerCase())].map(
+        ([, list]): FindingInput => ({
           ruleId: "remote-access-tool",
-          title: `Remote access tool "${s(e, "name")}" is running`,
+          title: `Remote access tool "${list[0] ? s(list[0], "name") : ""}" is running`,
           severity: "low",
           confidence: "high",
           technique: "T1219",
-          evidenceIds: [e.id],
+          evidenceIds: list.map((e) => e.id).slice(0, 12),
           why: "This software lets someone control or reach this computer from elsewhere. Scammers and intruders install the same legitimate tools.",
           benign: "Expected if you installed it yourself.",
-        }];
-      }),
+        }),
+      ),
   },
   {
     id: "listener-unsigned",
@@ -258,7 +257,7 @@ export const rules: Rule[] = [
         confidence: "high",
         technique: "T1204",
         evidenceIds: [e.id],
-        why: `Defender flagged ${s(e, "path") || "a file"}${b(e, "actionSuccess") ? " and reports it handled it" : " and does not report a successful clean-up"}. Something malicious reached this machine.`,
+        why: `Defender flagged ${s(e, "path").slice(0, 200) || "a file"}${b(e, "actionSuccess") ? " and reports it handled it" : " and does not report a successful clean-up"}. Something malicious reached this machine.`,
         benign: "Hacking tools kept for study and some cracks are flagged without an actual intrusion.",
       })),
   },
@@ -290,11 +289,15 @@ export const rules: Rule[] = [
     run: (store) =>
       store.all("event").flatMap((e): FindingInput[] => {
         if (![1102, 104].includes(n(e, "eventId"))) return [];
+        const fields = (e.data.fields ?? {}) as Record<string, unknown>;
+        const channel = n(e, "eventId") === 1102 ? "Security" : String(fields.Channel ?? "");
+        // Only the core logs record intrusions. Tools clear their own application logs routinely.
+        const core = /^(security|system|microsoft-windows-powershell\/operational|windows powershell)$/i.test(channel);
         return [{
           ruleId: "log-cleared",
-          title: `${n(e, "eventId") === 1102 ? "Security" : "An"} event log was cleared`,
-          severity: "high",
-          confidence: "medium",
+          title: `${channel || "An"} event log was cleared`,
+          severity: core ? "high" : "low",
+          confidence: core ? "medium" : "low",
           technique: "T1070.001",
           evidenceIds: [e.id],
           why: "Clearing logs removes the record of what happened. Intruders do it to cover their tracks.",
@@ -331,13 +334,15 @@ export const rules: Rule[] = [
         if (n(e, "eventId") !== 7045) return [];
         const fields = (e.data.fields ?? {}) as Record<string, unknown>;
         const image = String(fields.ImagePath ?? "");
-        const reason = lolbinReason(image) ?? (isUserWritablePath(image) ? "runs from a temporary or public folder" : null);
+        const abuse = lolbinReason(image);
+        const reason = abuse ?? (isUserWritablePath(image) ? "runs from a temporary or public folder" : null);
         if (!reason) return [];
         return [{
           ruleId: "service-installed",
           title: `Service "${String(fields.ServiceName ?? "?")}" was installed and ${reason}`,
-          severity: "high",
-          confidence: "medium",
+          // Installers routinely run a short-lived service from Temp, so that alone is a weak signal.
+          severity: abuse ? "high" : "medium",
+          confidence: abuse ? "medium" : "low",
           technique: "T1543.003",
           evidenceIds: [e.id],
           why: `A service was installed with the command "${image.slice(0, 200)}". Services run with high privileges and survive reboots.`,
@@ -348,23 +353,28 @@ export const rules: Rule[] = [
   {
     id: "powershell-script",
     describe: "PowerShell logged a script using download-and-run or decode techniques.",
-    run: (store) =>
-      store.all("event").flatMap((e): FindingInput[] => {
+    run: (store) => {
+      const hits = store.all("event").flatMap((e) => {
         if (n(e, "eventId") !== 4104) return [];
         const fields = (e.data.fields ?? {}) as Record<string, unknown>;
-        const reason = lolbinReason(String(fields.ScriptBlockText ?? ""));
-        if (!reason) return [];
-        return [{
+        const reason = scriptBlockReason(String(fields.ScriptBlockText ?? ""));
+        return reason ? [{ e, reason, script: String(fields.Path ?? "") || "a script typed or piped in (no file)" }] : [];
+      });
+      // One finding per script and reason, however many times it ran.
+      return [...groupBy(hits, (h) => `${h.script}|${h.reason}`)].map(([, list]): FindingInput => {
+        const first = list[0];
+        return {
           ruleId: "powershell-script",
-          title: `A PowerShell script ${reason}`,
+          title: `PowerShell ${first?.reason ?? ""}: ${first?.script ?? ""}`,
           severity: "medium",
           confidence: "low",
           technique: "T1059.001",
-          evidenceIds: [e.id],
-          why: `Windows recorded a script block that ${reason}.`,
-          benign: "Package managers, installers and developer tools do this routinely. Read the script before worrying.",
-        }];
-      }),
+          evidenceIds: list.map((h) => h.e.id).slice(0, 12),
+          why: `Windows recorded ${list.length} script block${list.length === 1 ? "" : "s"} from ${first?.script ?? "a script"} where the code ${first?.reason ?? ""}.`,
+          benign: "Package managers, installers, developer tools and security tools that carry detection patterns all trip this. Read the script before worrying.",
+        };
+      });
+    },
   },
   {
     id: "password-guessing",
@@ -483,6 +493,17 @@ export const rules: Rule[] = [
       }),
   },
 ];
+
+function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const item of items) {
+    const k = key(item);
+    const list = out.get(k) ?? [];
+    list.push(item);
+    out.set(k, list);
+  }
+  return out;
+}
 
 function hasInjection(value: unknown, depth = 0): boolean {
   if (typeof value === "string") return looksLikeInjection(value);
