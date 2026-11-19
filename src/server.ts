@@ -38,6 +38,9 @@ const fail = (err: unknown): ToolResult => ({
 
 export function createServer(): McpServer {
   let store = new CaseStore();
+  // What this case already holds, so a repeated call cannot double the evidence.
+  const scannedAreas = new Set<string>();
+  const filesRead = new Set<string>();
   const server = new McpServer({ name: "amihacked", version: VERSION }, { instructions: INSTRUCTIONS });
 
   server.registerTool(
@@ -52,7 +55,13 @@ export function createServer(): McpServer {
     },
     async ({ areas, days }) => {
       try {
-        await scanLive(store, { areas, days });
+        const wanted = areas?.length ? areas : [...LIVE_AREAS];
+        const repeat = wanted.filter((a) => scannedAreas.has(a));
+        if (repeat.length > 0) {
+          return fail(`Already scanned in this case: ${repeat.join(", ")}. Scanning again would duplicate the evidence. Call new_case first to rescan.`);
+        }
+        await scanLive(store, { areas: wanted, days });
+        for (const a of wanted) scannedAreas.add(a);
         runRules(store);
         return ok(summarise(store), true);
       } catch (err) {
@@ -70,7 +79,10 @@ export function createServer(): McpServer {
     },
     async ({ path }) => {
       try {
-        const kind = await readEvidenceFile(store, path);
+        const full = resolve(path);
+        if (filesRead.has(full)) return fail("This file is already in the case. Reading it again would duplicate the evidence.");
+        const kind = await readEvidenceFile(store, full);
+        filesRead.add(full);
         runRules(store);
         return ok({ fileKind: kind, ...summarise(store) }, true);
       } catch (err) {
@@ -202,6 +214,8 @@ export function createServer(): McpServer {
     { description: "Discard all evidence and findings and start an empty case.", inputSchema: {} },
     async () => {
       store = new CaseStore();
+      scannedAreas.clear();
+      filesRead.clear();
       return ok({ started: store.startedAt });
     },
   );

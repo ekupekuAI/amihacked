@@ -33,23 +33,29 @@ const SSH_FAILED = /^Failed (password|publickey|keyboard-interactive\/pam|none) 
 const SSH_INVALID = /^(?:Invalid user|Connection closed by invalid user|Disconnected from invalid user) (\S+)(?: from)? (\S+)/;
 const SSH_ACCEPTED = /^Accepted (\S+) for (\S+) from (\S+)/;
 
-/** Classic syslog lines carry no year, so the caller supplies one (usually the file's). */
-function syslogTime(m: RegExpExecArray, year: number): string | undefined {
+/**
+ * Classic syslog lines carry no year or time zone. The caller supplies the year
+ * (usually the file's) and times are read as UTC. A line that would land after
+ * `notAfter` (the file's last write) belongs to the year before: logs cross New Year.
+ */
+function syslogTime(m: RegExpExecArray, year: number, notAfter?: number): string | undefined {
   if (m[1]) {
     const d = new Date(m[1]);
     return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
   }
   const month = MONTHS[(m[2] ?? "").toLowerCase()];
   if (month === undefined) return undefined;
-  return new Date(Date.UTC(year, month, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]))).toISOString();
+  const at = (y: number): number => Date.UTC(y, month, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+  const t = at(year);
+  return new Date(notAfter !== undefined && t > notAfter + 86_400_000 ? at(year - 1) : t).toISOString();
 }
 
 /** One SSH login attempt from an auth.log / secure line, or null for any other line. */
-export function parseSshLine(text: string, line: number, year: number): SshEvent | null {
+export function parseSshLine(text: string, line: number, year: number, notAfter?: number): SshEvent | null {
   const m = SYSLOG.exec(text);
   if (!m) return null;
   const message = m[7] ?? "";
-  const time = syslogTime(m, year);
+  const time = syslogTime(m, year, notAfter);
   let hit = SSH_FAILED.exec(message);
   if (hit) return { line, time, ok: false, method: hit[1] ?? "", user: hit[2] ?? "", ip: hit[3] ?? "" };
   hit = SSH_ACCEPTED.exec(message);

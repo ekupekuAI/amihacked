@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-label="Terminal recording: amihacked reads an SSH log and a web log, reports a guessed root password and attack requests, each with evidence IDs.">
+  <defs>
+    <style>
+      text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14.5px; }
+      .dim { fill: #6f7f95; } .txt { fill: #d7e0ec; } .ok { fill: #34f5c5; } .hi { fill: #ff5d73; } .med { fill: #ffc857; } .b { font-weight: 700; }
+      .l { opacity: 0; animation: show 18s linear infinite; }
+      @keyframes show { 0% { opacity: 0; } 1.5%, 94% { opacity: 1; } 98%, 100% { opacity: 0; } }
+      .cursor { animation: blink 1.1s steps(1) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { .l { opacity: 1; animation: none; } .cursor { animation: none; } }
+    </style>
+  </defs>
+  <rect width="1000" height="560" rx="14" fill="#0a0f17"/>
+  <rect x="0.5" y="0.5" width="999" height="559" rx="14" fill="none" stroke="#223043"/>
+  <path d="M0 14A14 14 0 0 1 14 0H986A14 14 0 0 1 1000 14V40H0Z" fill="#111927"/>
+  <circle cx="24" cy="20" r="6" fill="#ff5f57"/><circle cx="44" cy="20" r="6" fill="#febc2e"/><circle cx="64" cy="20" r="6" fill="#28c840"/>
+  <text x="500" y="25" text-anchor="middle" class="dim" style="font-size:13px">amihacked</text>
+
+  <g>
+    <text class="l" style="animation-delay:0.2s" x="26" y="74"><tspan class="ok">$</tspan><tspan class="txt"> amihacked file examples/auth.log examples/access.log</tspan></text>
+    <text class="l dim" style="animation-delay:1.3s" x="26" y="100">Reading examples/auth.log...</text>
+    <text class="l dim" style="animation-delay:1.9s" x="26" y="122">Reading examples/access.log...</text>
+
+    <text class="l" style="animation-delay:3s" x="26" y="162"><tspan class="txt b">Verdict: </tspan><tspan class="hi b">Strong signs of compromise</tspan></text>
+
+    <text class="l" style="animation-delay:4.2s" x="26" y="202"><tspan class="hi b">HIGH    </tspan><tspan class="txt"> 203.0.113.9 logged in after 30 failed attempts</tspan></text>
+    <text class="l txt" style="animation-delay:4.7s" x="106" y="224">Many failures followed by a success from the same address is what</text>
+    <text class="l txt" style="animation-delay:4.7s" x="106" y="246">a guessed password looks like.</text>
+    <text class="l dim" style="animation-delay:5.4s" x="106" y="268">Innocent explanation: A user who forgot the password, then remembered it.</text>
+    <text class="l dim" style="animation-delay:6s" x="106" y="290">confidence high · T1110 · evidence E00001, E00002, E00003 ... E00033</text>
+
+    <text class="l" style="animation-delay:7.4s" x="26" y="330"><tspan class="med b">MEDIUM  </tspan><tspan class="txt"> 203.0.113.9 sent 3 attack requests</tspan></text>
+    <text class="l txt" style="animation-delay:7.9s" x="106" y="352">SQL injection, path traversal, probing for exposed files or logins.</text>
+    <text class="l txt" style="animation-delay:7.9s" x="106" y="374">None of the injected ones returned a success response.</text>
+    <text class="l dim" style="animation-delay:8.6s" x="106" y="396">Innocent explanation: Every public web server receives probes like these.</text>
+    <text class="l dim" style="animation-delay:9.2s" x="106" y="418">confidence high · T1190 · evidence E00035, E00036, E00037</text>
+
+    <text class="l txt b" style="animation-delay:10.6s" x="26" y="458">Coverage</text>
+    <text class="l" style="animation-delay:11.1s" x="42" y="480"><tspan class="ok">checked </tspan><tspan class="txt"> auth.log: 32 SSH login attempts from 2 addresses</tspan></text>
+    <text class="l" style="animation-delay:11.6s" x="42" y="502"><tspan class="ok">checked </tspan><tspan class="txt"> access.log: 5 requests, 3 carrying attack payloads</tspan></text>
+    <text class="l" style="animation-delay:12.6s" x="26" y="536"><tspan class="ok">$</tspan></text>
+    <g class="l" style="animation-delay:12.6s"><rect class="cursor" x="44" y="523" width="9" height="17" fill="#34f5c5"/></g>
+  </g>
+</svg>

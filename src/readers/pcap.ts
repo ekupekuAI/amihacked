@@ -117,7 +117,13 @@ function readNg(cur: Cursor, firstFour: Buffer, onPacket: PacketHandler): void {
     } else {
       const type = little ? typeLE : head.readUInt32BE(0);
       const total = little ? head.readUInt32LE(4) : head.readUInt32BE(4);
-      if (total < 12 || total > MAX_PACKET_BYTES + 4096) return;
+      if (total < 12) return;
+      if (total > MAX_PACKET_BYTES + 4096) {
+        // Too large to be a packet we keep (for example an embedded key log): step over it.
+        cur.skip(total - 8);
+        head = cur.read(8);
+        continue;
+      }
       const body = cur.read(total - 8);
       if (!body) return;
       const u16 = (o: number): number => (little ? body.readUInt16LE(o) : body.readUInt16BE(o));
@@ -269,10 +275,10 @@ export function tlsServerName(p: Buffer): string | null {
 
 const HTTP_START = /^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) (\S{1,2000}) HTTP\/1\.[01]\r\n/;
 
-function header(text: string, name: string): string {
-  const m = new RegExp(`\\r\\n${name}:[ \\t]*([^\\r\\n]{0,500})`, "i").exec(text);
-  return m?.[1] ?? "";
-}
+const headerPattern = (name: string): RegExp => new RegExp(`\\r\\n${name}:[ \\t]*([^\\r\\n]{0,500})`, "i");
+const HEADERS = { host: headerPattern("Host"), userAgent: headerPattern("User-Agent"), authorization: headerPattern("Authorization") };
+const header = (text: string, name: keyof typeof HEADERS): string => HEADERS[name].exec(text)?.[1] ?? "";
+const MAX_CREDENTIALS = 1000;
 
 /** Read a capture and reduce it to flows, DNS lookups, HTTP requests and exposed logins. */
 export function readPcap(path: string, limits: Partial<PcapLimits> = {}): PcapResult {
@@ -327,13 +333,13 @@ export function readPcap(path: string, limits: Partial<PcapLimits> = {}): PcapRe
     const text = p.toString("latin1", 0, Math.min(p.length, 4096));
     const http = HTTP_START.exec(text);
     if (http) {
-      const host = header(text, "Host");
+      const host = header(text, "host");
       if (flow && host) flow.httpHost = host;
       if (result.http.length < cap.maxHttp) {
-        result.http.push({ time: timeMs, src: seg.src, dst: seg.dst, method: http[1] ?? "", host, uri: http[2] ?? "", userAgent: header(text, "User-Agent") });
+        result.http.push({ time: timeMs, src: seg.src, dst: seg.dst, method: http[1] ?? "", host, uri: http[2] ?? "", userAgent: header(text, "userAgent") });
       } else result.truncated = true;
-      const basic = /^Basic\s+([A-Za-z0-9+/=]{4,400})/.exec(header(text, "Authorization"));
-      if (basic?.[1]) {
+      const basic = /^Basic\s+([A-Za-z0-9+/=]{4,400})/.exec(header(text, "authorization"));
+      if (basic?.[1] && result.credentials.length < MAX_CREDENTIALS) {
         // Keep the username, never the password.
         const user = Buffer.from(basic[1], "base64").toString("latin1").split(":")[0] ?? "";
         result.credentials.push({ time: timeMs, src: seg.src, dst: seg.dst, protocol: "HTTP Basic", user });
@@ -342,7 +348,7 @@ export function readPcap(path: string, limits: Partial<PcapLimits> = {}): PcapRe
     }
     if (seg.dport === 21 || seg.dport === 110 || seg.dport === 143) {
       const user = /^USER\s+(\S{1,100})\r?\n/i.exec(text);
-      if (user?.[1]) {
+      if (user?.[1] && result.credentials.length < MAX_CREDENTIALS) {
         result.credentials.push({ time: timeMs, src: seg.src, dst: seg.dst, protocol: seg.dport === 21 ? "FTP" : seg.dport === 110 ? "POP3" : "IMAP", user: user[1] });
       }
     }

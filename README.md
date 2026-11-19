@@ -1,25 +1,52 @@
-# amihacked
+<p align="center">
+  <img src="assets/banner.svg" alt="amihacked: ask your AI agent, am I hacked?" width="100%">
+</p>
 
-**Ask your AI agent: "Am I hacked?"**
+<p align="center">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-34f5c5?style=flat-square&labelColor=0d1420"></a>
+  <img alt="Node.js 20 or newer" src="https://img.shields.io/badge/node-%E2%89%A5%2020-34f5c5?style=flat-square&labelColor=0d1420">
+  <img alt="Model Context Protocol server" src="https://img.shields.io/badge/MCP-server-34f5c5?style=flat-square&labelColor=0d1420">
+  <img alt="Read-only" src="https://img.shields.io/badge/read--only-local-34f5c5?style=flat-square&labelColor=0d1420">
+  <img alt="Status: early" src="https://img.shields.io/badge/status-v0.1%20early-ffc857?style=flat-square&labelColor=0d1420">
+</p>
 
-amihacked gives an AI agent (Claude Code, Codex, Cursor, Gemini CLI, or anything that
-speaks MCP) the ability to investigate a computer for signs of compromise. It inspects
-the live machine or evidence files, and every conclusion has to cite the evidence it
-rests on.
+<p align="center">
+  <b>Give any AI agent the ability to investigate a computer for signs of compromise.</b><br>
+  It inspects the live machine or evidence files, and every conclusion must cite the evidence it rests on.
+</p>
 
-It is read-only, runs entirely on your machine, and needs no forensics lab.
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#what-it-looks-at">What it looks at</a> ·
+  <a href="#mcp-tools">MCP tools</a> ·
+  <a href="#safety">Safety</a> ·
+  <a href="#limits">Limits</a>
+</p>
 
-> Status: early (v0.1). The live scan supports Windows. It is not an antivirus.
+<br>
+
+<p align="center">
+  <img src="assets/demo.svg" alt="Terminal output: amihacked reports a guessed root password and web attack requests, each with evidence IDs" width="880">
+</p>
+
+<p align="center"><sub>Real output from the bundled example logs.</sub></p>
 
 ## Why
 
 An agent can reason about an intrusion, but it cannot see one. Left to run shell
-commands on its own, it produces a different investigation every time and nothing
+commands on its own, it produces a different investigation every time, and nothing
 stops it from stating things it never checked.
 
-amihacked fixes both. Fixed collectors turn the system into structured evidence
-records, each with an ID and a hash. Findings, whether from the built-in rules or from
-the agent, are rejected unless they cite records that exist.
+amihacked fixes both:
+
+- **It gives the agent eyes.** Fixed collectors turn a machine or a file into structured
+  evidence records, each with an ID and a hash.
+- **It keeps the agent honest.** Findings, from the built-in rules or from the agent
+  itself, are rejected unless they cite records that exist.
+- **It needs no lab.** One install, read-only, runs entirely on your machine.
+
+Works with Claude Code, Codex, Cursor, Gemini CLI, or anything else that speaks MCP.
 
 ## Quick start
 
@@ -59,6 +86,49 @@ Am I hacked? Check this computer and show me the evidence.
 
 For other agents, register the same command as a stdio MCP server.
 
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph IN["Inputs"]
+        direction TB
+        L["Live Windows machine"]
+        F["Evidence files<br/>evtx · pcap · logs"]
+    end
+
+    subgraph ENGINE["amihacked"]
+        direction TB
+        C["Collectors and readers<br/>fixed, read-only"]
+        S[("Case store<br/>evidence with IDs and hashes")]
+        R["23 detection rules<br/>MITRE ATT&CK"]
+        C --> S --> R
+    end
+
+    A["AI agent"]
+    O["Verdict · findings · timeline · report"]
+
+    L --> C
+    F --> C
+    R --> O
+    S <-->|"search, read, timeline"| A
+    A -->|"submit_finding<br/>must cite evidence IDs"| S
+    S --> O
+
+    classDef accent fill:#0d1420,stroke:#34f5c5,color:#e6edf6;
+    classDef plain fill:#0d1420,stroke:#2b3b52,color:#c9d4e3;
+    class S,R,C accent;
+    class L,F,A,O plain;
+```
+
+1. **Collect.** Collectors and readers turn the system into evidence records. They are
+   fixed scripts and parsers; the agent cannot change what they run.
+2. **Detect.** Rules read the evidence and raise findings, each with a severity, a
+   confidence, a MITRE ATT&CK technique and the most likely innocent explanation.
+3. **Investigate.** The agent searches the evidence, follows the timeline, and records
+   its own conclusions. A conclusion that cites no real evidence ID is refused.
+4. **Report.** One verdict, the findings with their evidence, and a plain list of what
+   could not be checked.
+
 ## What it looks at
 
 **The live machine (Windows)**
@@ -80,7 +150,7 @@ For other agents, register the same command as a stdio MCP server.
 | File | What is extracted |
 | --- | --- |
 | pcap / pcapng | Flows, DNS lookups, TLS server names, HTTP requests, unencrypted logins, regular "check-in" traffic, DNS tunnelling |
-| SSH auth log | Login attempts per address, password guessing, a success after many failures |
+| SSH auth log | Login attempts per address, password guessing, a success right after many failures |
 | Web access log | Requests carrying SQL injection, path traversal, command injection, Log4Shell and scanner signatures |
 | Windows `.evtx` | The same security events as the live scan (needs Windows in this version) |
 
@@ -88,33 +158,13 @@ The file type is detected from the content, not the name.
 
 ## What you get
 
-Output of the examples command above, shortened:
-
-```text
-Verdict: Strong signs of compromise
-
-HIGH     203.0.113.9 logged in after 30 failed attempts
-         Many failures followed by a success from the same address is what a guessed password looks like.
-         Innocent explanation: A user who forgot the password, then remembered it.
-         confidence high · T1110 · evidence E00001, E00002, E00003, ... E00033
-           E00001 line 1: SSH login failed user=root from=203.0.113.9
-
-MEDIUM   203.0.113.9 sent 3 attack requests (SQL injection, path traversal, probing for exposed files or logins)
-         The requests carry known attack payloads. None of the injected ones returned a success response.
-         Innocent explanation: Every public web server receives automated probes like these.
-         confidence high · T1190 · evidence E00035, E00036, E00037
-
-Coverage
-  checked  file:auth.log: 32 SSH login attempts from 2 addresses. Only sshd lines are read.
-  checked  file:access.log: 5 requests, 3 carrying attack payloads. Request bodies are not in access logs, so POST payloads are invisible.
-```
-
-- **Verdict** is one of three: no signs of compromise in what was checked, suspicious
+- **A verdict**, one of three: no signs of compromise in what was checked, suspicious
   items need a closer look, or strong signs of compromise. The strongest verdict needs
   strong evidence, not a pile of weak signals.
-- **Findings** carry a severity, a confidence, a MITRE ATT&CK technique, the most
-  likely innocent explanation, and the evidence IDs behind them.
-- **Coverage** lists what was checked and, just as plainly, what could not be.
+- **Findings** with a severity, a confidence, a MITRE ATT&CK technique, the most likely
+  innocent explanation, and the evidence IDs behind them.
+- **Coverage**: what was checked and, just as plainly, what could not be.
+- **A Markdown report** you can keep or hand to someone else.
 
 ## MCP tools
 
@@ -143,12 +193,21 @@ Coverage
 - A clear verdict means nothing was found in the areas listed under Coverage. It does
   not prove a system is clean. Kernel rootkits, firmware implants and malware that
   hides from the operating system are out of reach.
+- It is not an antivirus and gives no real-time protection.
 - Without administrator rights the Windows Security log cannot be read, so logon and
   account events are missing. The report says so when that happens.
 - Rules are heuristics. Each finding states its confidence and an innocent
   explanation; read both before acting.
 - Live scanning of macOS and Linux, cross-platform `.evtx`, disk images and memory
   dumps are not supported yet.
+
+## Roadmap
+
+- Live collectors for macOS and Linux
+- Pure TypeScript `.evtx` and registry-hive parsers, so evidence files work on any OS
+- Browser-extension and WMI persistence collectors
+- An npm release, so `npx amihacked` works
+- Known-answer cases that grade an agent's conclusions
 
 ## Development
 
@@ -160,8 +219,9 @@ npm install
 npm test
 ```
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the design and roadmap.
+The design is in [docs/DESIGN.md](docs/DESIGN.md). Issues and pull requests are welcome,
+especially new detection rules with a test and an innocent explanation.
 
 ## License
 
-MIT
+[MIT](LICENSE)

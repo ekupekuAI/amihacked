@@ -75,9 +75,9 @@ function ingestPcap(store: CaseStore, path: string, source: string): string {
   return `${r.packets} packets, ${r.flows.length} flows (top ${topFlows.length} kept), ${lookups.size} DNS names, ${r.http.length} HTTP requests${r.truncated ? ". Capture exceeded a size cap, so some detail was dropped" : ""}`;
 }
 
-function ingestSshLog(store: CaseStore, lines: string[], source: string, year: number): string {
+function ingestSshLog(store: CaseStore, lines: string[], source: string, modified: Date): string {
   const attempts = lines.flatMap((text, i) => {
-    const e = parseSshLine(text, i + 1, year);
+    const e = parseSshLine(text, i + 1, modified.getUTCFullYear(), modified.getTime());
     return e ? [e] : [];
   });
   // Keep every success, and the first failures, as citable records; totals come from the aggregate.
@@ -136,8 +136,11 @@ export async function readEvidenceFile(store: CaseStore, inputPath: string): Pro
       return "evtx";
     }
     const r = await runPowerShell<{ events: RawEvent[] | null; gaps: string[] | null }>(PS_EVENTS, { path }, 300_000);
-    const added = ingestWindowsEvents(store, asArray(r.events), source);
+    const events = asArray(r.events);
+    const added = ingestWindowsEvents(store, events, source);
     const gaps = asArray(r.gaps);
+    // The collector stops at this many events, newest first.
+    if (events.length >= 6000) gaps.push("the file holds more matching events than the 6,000 newest that were read; older ones are missing");
     store.noteCoverage({ area: source, status: gaps.length ? "partial" : "checked", note: `${added} relevant events${gaps.length ? `. Problems: ${clean(gaps.join("; "), 300)}` : ""}. Only security-relevant event IDs are read.` });
     return "evtx";
   }
@@ -151,7 +154,7 @@ export async function readEvidenceFile(store: CaseStore, inputPath: string): Pro
   const lines = readFileSync(path, "utf8").split(/\r?\n/);
   const kind = sniffTextLog(lines);
   if (kind === "ssh") {
-    store.noteCoverage({ area: source, status: "checked", note: `${ingestSshLog(store, lines, source, stat.mtime.getUTCFullYear())}. Only sshd lines are read.` });
+    store.noteCoverage({ area: source, status: "checked", note: `${ingestSshLog(store, lines, source, stat.mtime)}. Only sshd lines are read. Lines without a time zone are read as UTC.` });
     return "ssh-log";
   }
   if (kind === "web") {

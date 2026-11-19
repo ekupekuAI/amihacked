@@ -110,7 +110,7 @@ $det = Get-MpThreatDetection | Select-Object -First 50 | ForEach-Object {
     actionSuccess = [bool]$_.ActionSuccess; process = [string]$_.ProcessName
   }
 }
-$products = Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | ForEach-Object { [string]$_.displayName }
+$products = Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | ForEach-Object { [pscustomobject]@{ name = [string]$_.displayName; state = [int]$_.productState } }
 [pscustomobject]@{ status = $status; detections = @($det); products = @($products) } | ConvertTo-Json -Depth 4 -Compress
 `;
 

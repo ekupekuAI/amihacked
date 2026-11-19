@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join, win32 } from "node:path";
-import { aggregateAuth, exePathFromCommand, type AuthAttempt } from "../core/analysis.js";
+import { aggregateAuth, exePathFromCommand, isUserWritablePath, type AuthAttempt } from "../core/analysis.js";
 import type { CaseStore } from "../core/store.js";
 import { clean } from "../core/untrusted.js";
 import { asArray, BOOTSTRAP, PREAMBLE, runPowerShell } from "./powershell.js";
@@ -44,7 +44,10 @@ export function isOwnScript(text: string): boolean {
 
 /** Publisher signatures for files outside the Windows folder, in batches that fit an environment variable. */
 async function signatures(paths: string[]): Promise<Map<string, Signature>> {
-  const wanted = [...new Set(paths.map(normal).filter((p) => p && SIGNABLE.test(p) && !underWindows(p) && !storeApp(p)))].slice(0, MAX_SIGNATURE_PATHS);
+  // When the cap bites, files in temporary and public folders are checked first: the rules need those most.
+  const wanted = [...new Set(paths.map(normal).filter((p) => p && SIGNABLE.test(p) && !underWindows(p) && !storeApp(p)))]
+    .sort((a, b) => Number(isUserWritablePath(b)) - Number(isUserWritablePath(a)))
+    .slice(0, MAX_SIGNATURE_PATHS);
   const out = new Map<string, Signature>();
   let batch: string[] = [];
   let size = 0;
@@ -157,12 +160,18 @@ async function collectProcesses(store: CaseStore, withNetwork: boolean): Promise
 interface DefenderResult {
   status: Record<string, unknown> | null;
   detections: Array<Record<string, unknown>> | null;
-  products: string[] | null;
+  products: Array<{ name: string; state: number }> | null;
 }
+
+/** Security Center's productState packs the real-time engine status into bits 12-15; 1 means on. */
+export const antivirusActive = (productState: number): boolean => ((productState >> 12) & 0xf) === 1;
 
 async function collectDefender(store: CaseStore): Promise<string> {
   const r = await runPowerShell<DefenderResult>(ps.PS_DEFENDER);
-  const others = asArray(r.products).filter((p) => p && !/windows defender|microsoft defender/i.test(p));
+  // Security Center keeps listing products that are disabled or long uninstalled; only an active one counts.
+  const others = asArray(r.products)
+    .filter((p) => p.name && !/windows defender|microsoft defender/i.test(p.name) && antivirusActive(p.state))
+    .map((p) => clean(p.name, 100));
   if (r.status) {
     store.add({
       kind: "defender",

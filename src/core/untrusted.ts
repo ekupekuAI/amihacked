@@ -16,7 +16,6 @@ const INJECTION_PATTERNS: RegExp[] = [
   /ignore\s+(all\s+|any\s+)?(the\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)/i,
   /disregard\s+(all\s+|any\s+)?(previous|prior|above|your)\s+(instructions|rules)/i,
   /\byou\s+are\s+now\s+(a|an|in)\b/i,
-  /\b(system|developer)\s+prompt\b/i,
   /<\/?\s*(system|assistant|instructions?)\s*>/i,
   /\b(ai|assistant|claude|chatgpt|llm|agent)\b[^.\n]{0,60}\b(must|should|needs?\s+to)\s+(report|say|conclude|mark|classify|ignore)\b/i,
   /\bdo\s+not\s+(report|flag|mention)\s+this\b/i,

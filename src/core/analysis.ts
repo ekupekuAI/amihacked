@@ -100,13 +100,13 @@ export interface AuthSource {
   users: string[];
   first?: string | undefined;
   last?: string | undefined;
-  /** A success that came after at least `minFailures` failures from the same address. */
+  /** A success within an hour after at least `minFailures` failures from the same address. */
   successAfterFailures: boolean;
   evidenceIds: string[];
 }
 
 /** Group login attempts by source address and spot password guessing. */
-export function aggregateAuth(attempts: AuthAttempt[], minFailures = 5): AuthSource[] {
+export function aggregateAuth(attempts: AuthAttempt[], minFailures = 5, windowMs = 3_600_000): AuthSource[] {
   const groups = new Map<string, AuthAttempt[]>();
   for (const a of attempts) {
     if (!a.ip || a.ip === "-" || a.ip === "::1" || a.ip === "127.0.0.1") continue;
@@ -119,10 +119,19 @@ export function aggregateAuth(attempts: AuthAttempt[], minFailures = 5): AuthSou
     list.sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
     let failuresSoFar = 0;
     let successAfterFailures = false;
+    const failureTimes: number[] = [];
     for (const a of list) {
-      if (a.ok) {
-        if (failuresSoFar >= minFailures) successAfterFailures = true;
-      } else failuresSoFar++;
+      const t = a.time ? Date.parse(a.time) : Number.NaN;
+      if (!a.ok) {
+        failuresSoFar++;
+        failureTimes.push(t);
+        continue;
+      }
+      // Only failures shortly before the success count: a few typos spread over months are not guessing.
+      const recent = Number.isNaN(t)
+        ? failuresSoFar
+        : failureTimes.filter((f) => Number.isNaN(f) || (f <= t && t - f <= windowMs)).length;
+      if (recent >= minFailures) successAfterFailures = true;
     }
     out.push({
       ip,
