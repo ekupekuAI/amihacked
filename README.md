@@ -88,37 +88,9 @@ For other agents, register the same command as a stdio MCP server.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    subgraph IN["Inputs"]
-        direction TB
-        L["Live Windows machine"]
-        F["Evidence files<br/>evtx · pcap · logs"]
-    end
-
-    subgraph ENGINE["amihacked"]
-        direction TB
-        C["Collectors and readers<br/>fixed, read-only"]
-        S[("Case store<br/>evidence with IDs and hashes")]
-        R["23 detection rules<br/>MITRE ATT&CK"]
-        C --> S --> R
-    end
-
-    A["AI agent"]
-    O["Verdict · findings · timeline · report"]
-
-    L --> C
-    F --> C
-    R --> O
-    S <-->|"search, read, timeline"| A
-    A -->|"submit_finding<br/>must cite evidence IDs"| S
-    S --> O
-
-    classDef accent fill:#0d1420,stroke:#34f5c5,color:#e6edf6;
-    classDef plain fill:#0d1420,stroke:#2b3b52,color:#c9d4e3;
-    class S,R,C accent;
-    class L,F,A,O plain;
-```
+<p align="center">
+  <img src="assets/architecture.svg" alt="Architecture: inputs feed read-only collectors into a case store of evidence; rules and the AI agent read it; findings must cite evidence IDs; the result is a verdict and report" width="100%">
+</p>
 
 1. **Collect.** Collectors and readers turn the system into evidence records. They are
    fixed scripts and parsers; the agent cannot change what they run.
